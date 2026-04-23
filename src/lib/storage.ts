@@ -44,6 +44,22 @@ export function getRecentSites(): RecentSite[] {
   return list.sort((a, b) => b.lastVisitedAt - a.lastVisitedAt);
 }
 
+// same normalization the worker used to apply to urls before per-user ids,
+// so we can match what the user typed against what we stored previously
+function normalizeUrl(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\/+$/, "");
+}
+
+// find a site we've already created on this device for this url, so re-pasting
+// the same url returns the user to their existing agent instead of spawning a
+// brand new one every time
+export function findRecentByUrl(rawUrl: string): RecentSite | null {
+  const needle = normalizeUrl(rawUrl);
+  if (!needle) return null;
+  const list = getRecentSites();
+  return list.find((r) => normalizeUrl(r.url) === needle) ?? null;
+}
+
 // add or refresh a site in the list
 export function rememberSite(entry: { agentId: string; url: string }): void {
   if (typeof window === "undefined") return;

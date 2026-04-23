@@ -27,10 +27,11 @@ import {
 // re-export so wrangler can find the durable object class
 export { SiteAgent };
 
-// deterministic DO id from the url, so same url always hits the same agent
-function agentIdFromUrl(env: Env, url: string): DurableObjectId {
-  const normalized = url.trim().toLowerCase().replace(/\/+$/, "");
-  return env.SITE_AGENT.idFromName(normalized);
+// fresh random DO id per agent so data is never shared across users of the
+// same url. the id itself is the capability: if you have the /site/<id> link,
+// you have access. each device tracks its own ids in localStorage.
+function newAgentId(env: Env): DurableObjectId {
+  return env.SITE_AGENT.newUniqueId();
 }
 
 // helper to call any path on a DO by its id string
@@ -83,7 +84,7 @@ export default {
         if (!isValidUrl(siteUrl)) {
           return j({ error: "Please provide a valid URL." }, 400);
         }
-        const id = agentIdFromUrl(env, siteUrl);
+        const id = newAgentId(env);
         const stub = env.SITE_AGENT.get(id);
         // tell the DO to set itself up
         const res = await stub.fetch("https://agent.internal/init", {

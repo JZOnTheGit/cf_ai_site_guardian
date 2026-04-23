@@ -2,6 +2,23 @@
 
 All notable changes to Site Guardian are tracked in this file.
 
+## [1.1.1] - Per-device agents (privacy fix)
+
+### Fixed
+
+- Agent ids are now random per creation (`env.SITE_AGENT.newUniqueId()`)
+  instead of being derived deterministically from the site URL. Previously
+  two people scanning the same URL landed on the same Durable Object and
+  could see each other's scan history and chat transcript. The `/site/<id>`
+  link is now the capability - if you don't have it, you don't get the data.
+- Landing page checks `localStorage` for an existing agent for the pasted
+  URL before creating a new one, so re-pasting the same site on the same
+  device returns you to your existing agent instead of spawning an empty
+  duplicate.
+
+Existing agents remain accessible via their current URLs; only new creates
+are affected.
+
 ## [1.1.0] - Tier 2: deep upgrade
 
 ### Added - AI

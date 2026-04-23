@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
-import { rememberSite } from "../lib/storage";
+import { findRecentByUrl, rememberSite } from "../lib/storage";
 import { RecentSites } from "../components/RecentSites";
 import { DarkModeToggle } from "../components/DarkModeToggle";
 
@@ -17,10 +17,20 @@ export default function Landing() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!url.trim()) return;
+    const input = url.trim();
+    if (!input) return;
     setLoading(true);
     try {
-      const { agentId, url: savedUrl } = await api.createAgent(url.trim());
+      // if this device already has an agent for this url, jump straight back
+      // into it. agent ids are random per creation now, so without this we'd
+      // spawn a new empty agent every time someone re-pastes the same url.
+      const existing = findRecentByUrl(input);
+      if (existing) {
+        rememberSite({ agentId: existing.agentId, url: existing.url });
+        navigate(`/site/${encodeURIComponent(existing.agentId)}`);
+        return;
+      }
+      const { agentId, url: savedUrl } = await api.createAgent(input);
       // remember this site in the browser so it shows up in recent sites
       rememberSite({ agentId, url: savedUrl });
       navigate(`/site/${encodeURIComponent(agentId)}`);
