@@ -42,11 +42,6 @@ All notable changes to Site Guardian are tracked in this file.
 - Asset caching + preload hints. Hashed Vite assets are served with
   `cache-control: immutable, max-age=31536000`, and HTML gets a
   `Link: rel=preload` hint for the main bundle.
-- Optional integrations catalog. `wrangler.toml` has a commented-out section
-  with drop-in bindings for R2, KV, Queues, Vectorize, Workflows, Browser
-  Rendering, Analytics Engine, and the rate-limiting binding, each with a
-  one-line setup command.
-
 ### Added - Security
 
 - `worker/security.ts` centralizing `ssrfReason`, `isValidAgentId`,

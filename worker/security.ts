@@ -104,8 +104,6 @@ export class HttpError extends Error {
 // very small in-memory sliding window, keyed by ip
 // not cluster-safe (each Worker isolate keeps its own map) but it is
 // good enough to stop casual abuse and does not need any binding
-// for a stronger limiter, uncomment the rate_limiting binding in
-// wrangler.toml (see README "optional integrations")
 
 interface RateBucket {
   count: number;

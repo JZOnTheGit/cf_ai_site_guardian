@@ -184,7 +184,9 @@ export default function Dashboard() {
     <div className="min-h-full bg-ink-50 pb-24 dark:bg-ink-900">
       <Toaster />
       {/* sticky-feeling top bar */}
-      <header className="border-b border-ink-100 bg-white/80 backdrop-blur dark:border-ink-700 dark:bg-ink-900/80">
+      {/* relative + high z-index so popovers (overflow menu, dark-mode, */}
+      {/* auto-scan) always paint above the main content's stacking context */}
+      <header className="relative z-30 border-b border-ink-100 bg-white/80 backdrop-blur dark:border-ink-700 dark:bg-ink-900/80">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <Link to="/" className="flex items-center gap-2 text-ink-900 dark:text-ink-100">
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ink-900 text-[11px] font-semibold text-white dark:bg-white dark:text-ink-900">
@@ -376,7 +378,9 @@ export default function Dashboard() {
               </div>
 
               {/* accessibility + tls snapshot row */}
-              {latest && (
+              {/* only render if the scan record has the new fields, old scans */}
+              {/* from before v1.1 don't carry accessibility/tls/links */}
+              {latest && latest.raw.accessibility && latest.raw.tls && (
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                   <A11yCard scan={latest.raw} />
                   <TlsCard scan={latest.raw} />
@@ -448,8 +452,11 @@ function formatBytes(n: number): string {
 }
 
 // accessibility summary card, renders the small a11y snapshot
+// defensive: old scans may not have this field at all
 function A11yCard({ scan }: { scan: any }) {
-  const a = scan.accessibility;
+  const a = scan?.accessibility;
+  if (!a) return null;
+  const issues = Array.isArray(a.issues) ? a.issues : [];
   return (
     <div className="card card-pad">
       <div className="flex items-center justify-between">
@@ -457,18 +464,18 @@ function A11yCard({ scan }: { scan: any }) {
           Accessibility
         </h3>
         <span className="text-xl font-semibold text-ink-900 dark:text-ink-100">
-          {a.score}
+          {a.score ?? "-"}
         </span>
       </div>
       <p className="mt-1 text-xs text-ink-400">
-        {a.totalImages} image(s), {a.imagesMissingAlt} missing alt
+        {a.totalImages ?? 0} image(s), {a.imagesMissingAlt ?? 0} missing alt
       </p>
-      {a.issues.length === 0 ? (
+      {issues.length === 0 ? (
         <p className="mt-3 text-sm text-ink-500">No issues detected.</p>
       ) : (
         <ul className="mt-3 space-y-1.5 text-sm text-ink-700 dark:text-ink-200">
-          {a.issues.map((i: any) => (
-            <li key={i.id}>- {i.message}</li>
+          {issues.map((i: any, idx: number) => (
+            <li key={i?.id ?? idx}>- {i?.message ?? String(i)}</li>
           ))}
         </ul>
       )}
@@ -477,8 +484,12 @@ function A11yCard({ scan }: { scan: any }) {
 }
 
 // tls + network snapshot card
+// defensive: scan.links may be undefined on old scans
 function TlsCard({ scan }: { scan: any }) {
-  const t = scan.tls;
+  const t = scan?.tls;
+  if (!t) return null;
+  const links = scan?.links ?? { sampled: 0, broken: [] };
+  const brokenCount = Array.isArray(links.broken) ? links.broken.length : 0;
   return (
     <div className="card card-pad">
       <h3 className="text-sm font-semibold text-ink-900 dark:text-ink-100">
@@ -490,16 +501,15 @@ function TlsCard({ scan }: { scan: any }) {
         <KV k="HTTP" v={t.httpVersion ?? "-"} />
         <KV k="Country" v={t.country ?? "-"} />
         <KV k="Colo" v={t.colo ?? "-"} />
-        <KV
-          k="Links broken"
-          v={`${scan.links.broken.length} / ${scan.links.sampled}`}
-        />
+        <KV k="Links broken" v={`${brokenCount} / ${links.sampled ?? 0}`} />
       </dl>
     </div>
   );
 }
 
 // tiny kebab-menu with secondary actions
+// closes on outside click or escape, not on mouseleave (which was buggy
+// because there's a tiny gap between button and menu)
 function OverflowMenu({
   onExport,
   onDelete,
@@ -510,14 +520,36 @@ function OverflowMenu({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  // close when user clicks anywhere outside the menu or hits escape
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   return (
-    <div className="relative">
+    <div className="relative" ref={wrapRef}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         disabled={disabled}
         className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-ink-200 bg-white transition hover:bg-ink-50 disabled:opacity-50 dark:border-ink-700 dark:bg-ink-800 dark:hover:bg-ink-700"
         aria-label="Open actions menu"
+        aria-haspopup="menu"
+        aria-expanded={open}
       >
         <span className="text-ink-600 dark:text-ink-200" aria-hidden>
           ⋯
@@ -525,10 +557,11 @@ function OverflowMenu({
       </button>
       {open && (
         <div
-          className="absolute right-0 top-11 z-20 w-52 overflow-hidden rounded-xl border border-ink-200 bg-white text-sm shadow-card dark:border-ink-700 dark:bg-ink-800"
-          onMouseLeave={() => setOpen(false)}
+          role="menu"
+          className="absolute right-0 top-full mt-2 z-20 w-52 overflow-hidden rounded-xl border border-ink-200 bg-white text-sm shadow-card dark:border-ink-700 dark:bg-ink-800"
         >
           <button
+            role="menuitem"
             onClick={() => {
               setOpen(false);
               onExport();
@@ -538,6 +571,7 @@ function OverflowMenu({
             Download JSON export
           </button>
           <button
+            role="menuitem"
             onClick={() => {
               setOpen(false);
               onDelete();

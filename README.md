@@ -59,9 +59,7 @@ See [`CHANGELOG.md`](./CHANGELOG.md) for the full list. Highlights:
   **copy-as-code snippets** for fixing security headers, **export-as-JSON**
   and **delete-agent** actions.
 - **Platform**: cron trigger safety-net, long-lived cache headers for
-  hashed Vite assets, a preload hint for HTML, and a documented catalog of
-  optional Cloudflare bindings (R2 / KV / Queues / Vectorize / Workflows /
-  Browser Rendering / Analytics Engine / Rate Limiting) in `wrangler.toml`.
+  hashed Vite assets, and a preload hint for HTML.
 - **Tests + CI**: Vitest suite (17 tests covering the security and
   analyzer helpers), GitHub Actions workflow running typecheck, lint,
   tests, build, and `wrangler deploy --dry-run`.
@@ -369,26 +367,6 @@ The current deployment lives at **[cf-ai-site-guardian.jass150505.workers.dev](h
 Mutating endpoints enforce rate limits per IP, a same-origin check, hex
 agent-id validation, and SSRF protection on URLs. Type definitions live in
 `src/lib/api.ts` and mirror `worker/agent.ts` / `worker/ai.ts`.
-
----
-
-## Optional Cloudflare integrations
-
-`wrangler.toml` ships with a commented-out section documenting how to
-enable each of these when you want them (they are not required for the
-base app):
-
-- **R2** for long-term raw HTML snapshot storage per scan.
-- **KV** for a warm cache of recent scores keyed by URL.
-- **Queues** for offloading the AI compare step off the scan request.
-- **Vectorize** for semantic search across past AI insights.
-- **Workflows** for multi-step scans with retries.
-- **Browser Rendering** for headless Chrome Lighthouse-style scans.
-- **Analytics Engine** for per-site scan metrics.
-- **Rate Limiting binding** if you outgrow the in-memory limiter.
-
-Each section has the exact `npx wrangler ... create` command you'd run to
-provision the resource.
 
 ---
 
