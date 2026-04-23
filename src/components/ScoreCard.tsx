@@ -44,15 +44,15 @@ export function ScoreCard({ label, score, hint, history = [] }: ScoreCardProps) 
     <div className="card card-pad">
       {/* label on the left, big number on the right */}
       <div className="flex items-baseline justify-between">
-        <span className="text-sm font-medium text-ink-500">{label}</span>
+        <span className="text-sm font-medium text-ink-500 dark:text-ink-300">{label}</span>
         <div className="flex items-baseline gap-2">
           {/* delta arrow chip, only shown when we actually have two scans */}
           {history.length >= 2 && delta !== 0 && (
             <span
               className={`inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${
                 delta > 0
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-red-200 bg-red-50 text-red-700"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                  : "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
               }`}
               aria-label={`${delta > 0 ? "up" : "down"} ${Math.abs(delta)} since last scan`}
             >
@@ -66,7 +66,7 @@ export function ScoreCard({ label, score, hint, history = [] }: ScoreCardProps) 
       </div>
 
       {/* progress bar animates when the score changes */}
-      <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-ink-100">
+      <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-ink-100 dark:bg-ink-700">
         <div
           className={`h-full rounded-full transition-all duration-500 ${scoreBg(clamped)}`}
           style={{ width: `${clamped}%` }}
@@ -75,7 +75,7 @@ export function ScoreCard({ label, score, hint, history = [] }: ScoreCardProps) 
 
       {/* sparkline + hint row */}
       <div className="mt-3 flex items-center justify-between gap-2">
-        <p className="text-xs text-ink-400 truncate">{hint ?? ""}</p>
+        <p className="text-xs text-ink-400 truncate dark:text-ink-500">{hint ?? ""}</p>
         {history.length >= 2 && (
           <Sparkline values={history} color={strokeHex(clamped)} width={110} height={24} />
         )}

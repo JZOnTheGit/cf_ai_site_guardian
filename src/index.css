@@ -22,9 +22,10 @@ body {
 
 /* reusable component classes for the apple-style ui */
 @layer components {
-  /* rounded white card with subtle shadow */
+  /* rounded white card with subtle shadow, dark variant for dark mode */
   .card {
-    @apply rounded-2xl bg-white shadow-card border border-ink-100/70;
+    @apply rounded-2xl bg-white shadow-card border border-ink-100/70
+      dark:bg-ink-800 dark:border-ink-700/70 dark:shadow-none;
   }
   /* standard inner padding for a card */
   .card-pad {
@@ -33,22 +34,40 @@ body {
   /* main cta button, dark pill */
   .btn-primary {
     @apply inline-flex items-center justify-center rounded-full bg-ink-900 px-5 py-2.5 text-sm font-medium text-white
-      transition-all duration-200 hover:bg-ink-800 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+      transition-all duration-200 hover:bg-ink-800 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none
+      dark:bg-white dark:text-ink-900 dark:hover:bg-ink-100;
   }
   /* secondary button, light pill */
   .btn-ghost {
     @apply inline-flex items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-medium text-ink-800
-      border border-ink-200 transition-all duration-200 hover:bg-ink-50 active:scale-[0.98] disabled:opacity-50;
+      border border-ink-200 transition-all duration-200 hover:bg-ink-50 active:scale-[0.98] disabled:opacity-50
+      dark:bg-ink-800 dark:text-ink-100 dark:border-ink-700 dark:hover:bg-ink-700;
   }
   /* big rounded text input used on the landing page */
   .input {
     @apply w-full rounded-full border border-ink-200 bg-white px-5 py-3.5 text-base
       placeholder:text-ink-400 shadow-soft focus:outline-none focus:ring-2 focus:ring-ink-900/10
-      focus:border-ink-300 transition;
+      focus:border-ink-300 transition
+      dark:bg-ink-800 dark:border-ink-700 dark:text-ink-50 dark:placeholder:text-ink-400
+      dark:focus:ring-white/10 dark:focus:border-ink-500;
   }
   /* small rounded chip used for tags and hints */
   .pill {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-ink-200 bg-white px-2.5 py-1 text-xs font-medium text-ink-600;
+    @apply inline-flex items-center gap-1.5 rounded-full border border-ink-200 bg-white px-2.5 py-1 text-xs font-medium text-ink-600
+      dark:bg-ink-800 dark:border-ink-700 dark:text-ink-300;
+  }
+  /* severity chip colors reused by issues + header tables */
+  .sev-critical {
+    @apply text-red-700 bg-red-50 border-red-100 dark:text-red-300 dark:bg-red-500/10 dark:border-red-500/30;
+  }
+  .sev-high {
+    @apply text-red-600 bg-red-50 border-red-100 dark:text-red-300 dark:bg-red-500/10 dark:border-red-500/30;
+  }
+  .sev-medium {
+    @apply text-amber-700 bg-amber-50 border-amber-100 dark:text-amber-300 dark:bg-amber-500/10 dark:border-amber-500/30;
+  }
+  .sev-low {
+    @apply text-ink-600 bg-ink-50 border-ink-100 dark:text-ink-300 dark:bg-ink-700 dark:border-ink-600;
   }
 }
 
@@ -60,6 +79,21 @@ body {
   from {
     opacity: 0;
     transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* toast slide + fade animation */
+.toast-in {
+  animation: toastIn 200ms ease-out both;
+}
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
   }
   to {
     opacity: 1;

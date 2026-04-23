@@ -39,12 +39,12 @@ export function Timeline({ history }: Props) {
   return (
     <div className="card">
       {/* header */}
-      <div className="border-b border-ink-100 px-6 py-4">
-        <h3 className="text-sm font-semibold text-ink-900">Scan history</h3>
+      <div className="border-b border-ink-100 px-6 py-4 dark:border-ink-700">
+        <h3 className="text-sm font-semibold text-ink-900 dark:text-ink-100">Scan history</h3>
         <p className="text-xs text-ink-400">Latest {history.length} scans</p>
       </div>
       {/* list of scans, newest first */}
-      <ol className="divide-y divide-ink-100">
+      <ol className="divide-y divide-ink-100 dark:divide-ink-700">
         {history.map((h) => {
           // average score to pick the dot color
           const avg = Math.round(
@@ -61,19 +61,19 @@ export function Timeline({ history }: Props) {
                   className={`inline-block h-2.5 w-2.5 rounded-full ${dot(avg)}`}
                   aria-hidden
                 />
-                <span className="text-ink-700">{timeAgo(h.at)}</span>
+                <span className="text-ink-700 dark:text-ink-200">{timeAgo(h.at)}</span>
                 <span className="pill">HTTP {h.status || "-"}</span>
               </div>
               {/* right side: the three scores in short form */}
-              <div className="flex items-center gap-4 text-xs text-ink-500">
+              <div className="flex items-center gap-4 text-xs text-ink-500 dark:text-ink-400">
                 <span>
-                  Perf <b className="text-ink-900">{h.scores.performance}</b>
+                  Perf <b className="text-ink-900 dark:text-ink-100">{h.scores.performance}</b>
                 </span>
                 <span>
-                  Sec <b className="text-ink-900">{h.scores.security}</b>
+                  Sec <b className="text-ink-900 dark:text-ink-100">{h.scores.security}</b>
                 </span>
                 <span>
-                  SEO <b className="text-ink-900">{h.scores.seo}</b>
+                  SEO <b className="text-ink-900 dark:text-ink-100">{h.scores.seo}</b>
                 </span>
               </div>
             </li>

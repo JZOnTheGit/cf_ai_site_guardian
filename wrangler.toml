@@ -1,29 +1,98 @@
-# basic worker config
+## basic worker config
 name = "cf-ai-site-guardian"
 main = "worker/index.ts"
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
 
-# serve the built vite app from ./dist as static assets
-# worker handles /api/* and assets handles everything else with spa fallback
+## serve the built vite app from ./dist as static assets
+## worker handles /api/* and assets handles everything else with spa fallback
 [assets]
 directory = "./dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
-# workers ai binding used for llama 3.3 chat + insights
+## workers ai binding used for llama 3.3 chat + insights
 [ai]
 binding = "AI"
 
-# durable object that stores per-site memory and runs the agent logic
+## durable object that stores per-site memory and runs the agent logic
 [[durable_objects.bindings]]
 name = "SITE_AGENT"
 class_name = "SiteAgent"
 
-# tells cloudflare the DO uses sqlite storage
+## tells cloudflare the DO uses sqlite storage
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["SiteAgent"]
 
+## workers logs + tail: turn on verbose request logging
+## view with `npx wrangler tail` or in the dashboard observability tab
 [observability]
 enabled = true
+
+## cron trigger: runs every hour as a safety net sweep
+## the real work still happens inside each Durable Object alarm,
+## this is here so you can hook in global maintenance later
+## (e.g. clean up orphan agents, send weekly digests, etc.)
+[triggers]
+crons = ["0 * * * *"]
+
+## -----------------------------------------------------------------------
+## OPTIONAL INTEGRATIONS
+## uncomment the block you want + run the matching wrangler command,
+## then re-deploy. code paths guarded by `if (env.X)` are already in place.
+## -----------------------------------------------------------------------
+
+# # R2: store raw HTML snapshots per scan for long-term diffing
+# # create: npx wrangler r2 bucket create site-guardian-snapshots
+# [[r2_buckets]]
+# binding = "SNAPSHOTS"
+# bucket_name = "site-guardian-snapshots"
+
+# # KV: global "public sites" index + edge cache for snapshots
+# # create: npx wrangler kv namespace create SITES_INDEX
+# [[kv_namespaces]]
+# binding = "SITES_INDEX"
+# id = "REPLACE_WITH_KV_ID"
+
+# # Queues: decouple /api/scan from the response so scans run async
+# # create: npx wrangler queues create site-guardian-scans
+# [[queues.producers]]
+# binding = "SCAN_QUEUE"
+# queue = "site-guardian-scans"
+# [[queues.consumers]]
+# queue = "site-guardian-scans"
+# max_batch_size = 10
+
+# # Vectorize: semantic memory across scans for smarter chat recall
+# # create: npx wrangler vectorize create site-guardian-memory --dimensions=768 --metric=cosine
+# [[vectorize]]
+# binding = "MEMORY"
+# index_name = "site-guardian-memory"
+
+# # Workflows: multi-step durable scan pipeline (crawl -> scan -> insight -> notify)
+# # workflows are a separate product, see: https://developers.cloudflare.com/workflows/
+# [[workflows]]
+# binding = "SCAN_WORKFLOW"
+# name = "scan-workflow"
+# class_name = "ScanWorkflow"
+
+# # Browser Rendering: real headless Chrome for Core Web Vitals + JS-rendered SPAs
+# # needs Workers Paid + browser rendering enabled on the account
+# [browser]
+# binding = "BROWSER"
+
+# # Analytics Engine: high-cardinality time-series logging for scan telemetry
+# [[analytics_engine_datasets]]
+# binding = "METRICS"
+# dataset = "site_guardian_scans"
+
+# # Rate limiting binding: cluster-safe alternative to the in-memory limiter
+# # 100 requests per minute per ip, applied in worker/security.ts
+# [[unsafe.bindings]]
+# name = "RATE_LIMITER"
+# type = "ratelimit"
+# namespace_id = "1001"
+# [unsafe.bindings.simple]
+# limit = 100
+# period = 60

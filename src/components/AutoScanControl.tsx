@@ -46,7 +46,7 @@ export function AutoScanControl({ agentId, settings, onChange }: Props) {
       <span
         className={`h-2 w-2 rounded-full ${active ? "bg-emerald-500" : "bg-ink-300"}`}
       />
-      <span className="hidden text-xs text-ink-500 sm:inline">
+      <span className="hidden text-xs text-ink-500 sm:inline dark:text-ink-400">
         {active
           ? nextScanLabel(settings.nextScanAt) ?? "auto-scan on"
           : "auto-scan off"}
@@ -56,7 +56,7 @@ export function AutoScanControl({ agentId, settings, onChange }: Props) {
       <label className="relative">
         <span className="sr-only">Auto-scan interval</span>
         <select
-          className="appearance-none rounded-full border border-ink-200 bg-white px-3 py-1.5 pr-8 text-xs text-ink-800 shadow-soft focus:outline-none focus:ring-2 focus:ring-ink-900/10 disabled:opacity-50"
+          className="appearance-none rounded-full border border-ink-200 bg-white px-3 py-1.5 pr-8 text-xs text-ink-800 shadow-soft focus:outline-none focus:ring-2 focus:ring-ink-900/10 disabled:opacity-50 dark:border-ink-700 dark:bg-ink-800 dark:text-ink-100"
           value={String(settings.autoScanIntervalHours ?? "off")}
           disabled={saving}
           onChange={(e) => {

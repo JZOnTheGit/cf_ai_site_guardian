@@ -42,14 +42,16 @@ export function RecentSites() {
     <section className="mx-auto mt-16 w-full max-w-3xl text-left">
       {/* section header */}
       <div className="mb-3 flex items-baseline justify-between px-1">
-        <h2 className="text-sm font-semibold text-ink-700">Your monitored sites</h2>
+        <h2 className="text-sm font-semibold text-ink-700 dark:text-ink-200">
+          Your monitored sites
+        </h2>
         <span className="text-xs text-ink-400">
           stored in this browser - data lives on Cloudflare
         </span>
       </div>
 
       {/* list of recent sites */}
-      <ul className="card divide-y divide-ink-100 overflow-hidden">
+      <ul className="card divide-y divide-ink-100 overflow-hidden dark:divide-ink-700">
         {sites.map((s) => (
           <li key={s.agentId} className="flex items-center justify-between px-5 py-3.5">
             <Link
@@ -57,11 +59,11 @@ export function RecentSites() {
               className="group flex min-w-0 flex-1 items-center gap-3"
             >
               {/* tiny site icon */}
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink-900/90 text-[11px] font-semibold text-white">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink-900/90 text-[11px] font-semibold text-white dark:bg-white dark:text-ink-900">
                 {prettyUrl(s.url).slice(0, 2).toUpperCase()}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-ink-900 group-hover:text-ink-700">
+                <p className="truncate text-sm font-medium text-ink-900 group-hover:text-ink-700 dark:text-ink-100 dark:group-hover:text-ink-300">
                   {prettyUrl(s.url)}
                 </p>
                 <p className="text-xs text-ink-400">
@@ -72,7 +74,7 @@ export function RecentSites() {
             {/* forget button - removes from list only */}
             <button
               onClick={() => onForget(s.agentId)}
-              className="ml-3 rounded-full p-2 text-ink-400 hover:bg-ink-50 hover:text-ink-700"
+              className="ml-3 rounded-full p-2 text-ink-400 hover:bg-ink-50 hover:text-ink-700 dark:hover:bg-ink-700 dark:hover:text-ink-200"
               aria-label={`Forget ${prettyUrl(s.url)} from this browser`}
               title="Forget from this browser"
             >

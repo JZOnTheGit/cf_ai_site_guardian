@@ -8,9 +8,11 @@ import {
   generateScanInsight,
   generateCompareInsight,
   runChatStream,
+  decideChatAction,
   type ScanInsight,
   type CompareInsight,
   type ChatMessage,
+  type ChatToolCall,
 } from "./ai";
 
 // one row in the scan history
@@ -55,6 +57,11 @@ const DEFAULT_SETTINGS: AgentSettings = {
   autoScanIntervalHours: null,
   nextScanAt: null,
 };
+
+// hard cap on chat transcript rows, to keep DO storage small
+const MAX_MESSAGES = 200;
+// hard cap on scans kept in sqlite per agent
+const MAX_SCANS = 100;
 
 // the durable object class itself
 export class SiteAgent extends DurableObject<Env> {
@@ -102,7 +109,15 @@ export class SiteAgent extends DurableObject<Env> {
         case "/messages":
           return json(await this.messages());
         case "/settings":
-          return json(await this.updateSettings(await request.json<Partial<AgentSettings>>()));
+          return json(
+            await this.updateSettings(await request.json<Partial<AgentSettings>>()),
+          );
+        case "/clear-chat":
+          return json(await this.clearChat());
+        case "/destroy":
+          return json(await this.destroy());
+        case "/export":
+          return json(await this.exportAll());
         default:
           return new Response("not found", { status: 404 });
       }
@@ -162,6 +177,9 @@ export class SiteAgent extends DurableObject<Env> {
       record.at,
       JSON.stringify(record),
     );
+
+    // keep storage bounded: drop very old scans
+    this.trimScans();
 
     return record;
   }
@@ -232,8 +250,51 @@ export class SiteAgent extends DurableObject<Env> {
     return rows.map((r) => JSON.parse(r.payload) as ScanRecord);
   }
 
+  // wipe just the chat transcript, leaves scans + settings intact
+  async clearChat(): Promise<{ ok: true }> {
+    this.ctx.storage.sql.exec(`DELETE FROM messages`);
+    return { ok: true };
+  }
+
+  // blow away every byte of state for this agent
+  // caller is expected to tell the user this is permanent
+  async destroy(): Promise<{ ok: true }> {
+    // cancel any pending alarm first
+    try {
+      await this.ctx.storage.deleteAlarm();
+    } catch {
+      // no alarm to clear, ignore
+    }
+    // deleteAll drops all sqlite tables + key/value state
+    await this.ctx.storage.deleteAll();
+    return { ok: true };
+  }
+
+  // dump everything we know about this agent, used for download
+  async exportAll(): Promise<{
+    meta: AgentMeta | null;
+    settings: AgentSettings;
+    history: ScanRecord[];
+    messages: ChatMessage[];
+    exportedAt: number;
+  }> {
+    return {
+      meta: this.getMeta(),
+      settings: this.getSettings(),
+      history: await this.history(),
+      messages: this.loadMessages(),
+      exportedAt: Date.now(),
+    };
+  }
+
   // run one chat turn as a streaming response
   // tokens are piped to the client live, and the final reply is saved to sqlite
+  //
+  // flow:
+  //   1. save the user message
+  //   2. ask the model to either answer directly or call a tool (non-streaming)
+  //   3. if it wanted a tool: run it, then stream a final answer with the result
+  //   4. if it just wants to answer: stream the answer
   async chatStream({ message }: { message: string }): Promise<Response> {
     const meta = this.getMeta();
     if (!meta) {
@@ -252,22 +313,33 @@ export class SiteAgent extends DurableObject<Env> {
 
     // save the user message immediately so it shows up in memory right away
     this.saveMessage({ role: "user", content: text });
+    this.trimMessages();
 
     // load prior turns (now includes the just-saved user message)
     const prior = this.loadMessages().slice(0, -1);
-    // build the fresh context the llm gets as a system message
-    const context = JSON.stringify(
-      {
-        site: meta,
-        latest: this.latestScan(),
-        history: this.historySummary(),
-      },
-      null,
-      2,
-    );
+
+    // decide: direct answer or tool call?
+    const context = this.buildContext(meta);
+    let toolResult: unknown = null;
+    let toolName: string | null = null;
+    try {
+      const decision = await decideChatAction(this.env.AI, context, prior, text);
+      if (decision) {
+        toolName = decision.tool;
+        toolResult = await this.runTool(decision);
+      }
+    } catch (err) {
+      console.error("tool decision failed", err);
+    }
+
+    // build the final streaming call. If a tool ran, fold its result into context
+    // so the model can phrase a short reply grounded in real data
+    const finalContext = toolResult
+      ? `${context}\n\nTool "${toolName}" returned:\n${JSON.stringify(toolResult, null, 2)}`
+      : context;
 
     // ask workers ai for a streaming completion
-    const upstream = await runChatStream(this.env.AI, context, prior, text);
+    const upstream = await runChatStream(this.env.AI, finalContext, prior, text);
 
     // split the stream: one side goes to the client, the other we drain here
     // to rebuild the full assistant reply so we can persist it to sqlite.
@@ -307,21 +379,60 @@ export class SiteAgent extends DurableObject<Env> {
         // save a clearly marked fallback so the transcript is still coherent.
         const final = assembled.trim() || "(model returned no text)";
         this.saveMessage({ role: "assistant", content: final });
+        this.trimMessages();
       })(),
     );
 
     // return the other branch of the stream to the caller untouched
+    // also echo the tool name in a header so the UI can label the turn
     return new Response(forClient, {
       headers: {
         "content-type": "text/event-stream",
         "cache-control": "no-cache, no-transform",
+        ...(toolName ? { "x-tool": toolName } : {}),
       },
     });
+  }
+
+  // dispatch a tool call onto one of the real methods
+  // returns whatever structured data the tool produced
+  private async runTool(call: ChatToolCall): Promise<unknown> {
+    switch (call.tool) {
+      case "get_latest_scan":
+        return this.latestScan();
+      case "list_history": {
+        const raw = Number((call.args as any)?.limit ?? 10);
+        const n = Number.isFinite(raw) ? Math.min(Math.max(Math.round(raw), 1), 20) : 10;
+        return this.historySummary().slice(0, n);
+      }
+      case "compare_scans": {
+        const fromId = String((call.args as any)?.fromId ?? "");
+        const toId = String((call.args as any)?.toId ?? "");
+        return this.lookupCompare(fromId, toId);
+      }
+      case "request_new_scan":
+        return this.scan();
+      default:
+        return null;
+    }
   }
 
   // just the chat transcript, used when the chat panel first loads
   async messages(): Promise<ChatMessage[]> {
     return this.loadMessages();
+  }
+
+  // builds the JSON context string the llm uses as "memory" for this site
+  private buildContext(meta: AgentMeta): string {
+    return JSON.stringify(
+      {
+        site: meta,
+        latest: this.latestScan(),
+        history: this.historySummary(),
+      },
+      null,
+      2,
+    );
   }
 
   // ------------- storage helpers -------------
@@ -375,6 +486,36 @@ export class SiteAgent extends DurableObject<Env> {
     return row ? (JSON.parse(row.payload) as ScanRecord) : null;
   }
 
+  // look up two scan records by id and compute a fresh compare, used by tool
+  private lookupCompare(fromId: string, toId: string): unknown {
+    const fetchOne = (id: string) => {
+      const row = this.ctx.storage.sql
+        .exec<{ payload: string }>(`SELECT payload FROM scans WHERE id = ?`, id)
+        .toArray()[0];
+      return row ? (JSON.parse(row.payload) as ScanRecord) : null;
+    };
+    const a = fetchOne(fromId);
+    const b = fetchOne(toId);
+    if (!a || !b) return { error: "one or both scan ids not found" };
+    // fresh deterministic compare, cheap, no llm
+    return {
+      fromId,
+      toId,
+      previous: {
+        at: a.at,
+        scores: a.insight.scores,
+        missing: a.raw.security.missingCount,
+        ttfb: a.raw.performance.ttfbMs,
+      },
+      current: {
+        at: b.at,
+        scores: b.insight.scores,
+        missing: b.raw.security.missingCount,
+        ttfb: b.raw.performance.ttfbMs,
+      },
+    };
+  }
+
   // small summary rows for the timeline on the dashboard
   private historySummary(): AgentSnapshot["history"] {
     const rows = this.ctx.storage.sql
@@ -415,6 +556,26 @@ export class SiteAgent extends DurableObject<Env> {
       Date.now(),
       msg.role,
       msg.content,
+    );
+  }
+
+  // drop the oldest chat rows past the cap so DO storage stays small
+  private trimMessages() {
+    this.ctx.storage.sql.exec(
+      `DELETE FROM messages WHERE id IN (
+         SELECT id FROM messages ORDER BY at DESC LIMIT -1 OFFSET ?
+       )`,
+      MAX_MESSAGES,
+    );
+  }
+
+  // drop the oldest scan rows past the cap
+  private trimScans() {
+    this.ctx.storage.sql.exec(
+      `DELETE FROM scans WHERE id IN (
+         SELECT id FROM scans ORDER BY at DESC LIMIT -1 OFFSET ?
+       )`,
+      MAX_SCANS,
     );
   }
 }

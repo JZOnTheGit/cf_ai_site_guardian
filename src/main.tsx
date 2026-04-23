@@ -4,7 +4,11 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import Landing from "./pages/Landing";
 import Dashboard from "./pages/Dashboard";
+import { initTheme } from "./lib/theme";
 import "./index.css";
+
+// pick the right theme before the first paint so there's no flash
+initTheme();
 
 // mount the app into #root and set up client-side routing
 ReactDOM.createRoot(document.getElementById("root")!).render(

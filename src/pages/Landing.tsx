@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { rememberSite } from "../lib/storage";
 import { RecentSites } from "../components/RecentSites";
+import { DarkModeToggle } from "../components/DarkModeToggle";
 
 export default function Landing() {
   // local form state
@@ -31,12 +32,15 @@ export default function Landing() {
   }
 
   return (
-    <div className="min-h-full bg-gradient-to-b from-white via-ink-50 to-ink-50">
-      {/* top bar with the product name */}
+    <div className="min-h-full bg-gradient-to-b from-white via-ink-50 to-ink-50 dark:from-ink-900 dark:via-ink-900 dark:to-ink-900">
+      {/* top bar with the product name + theme toggle */}
       <header className="mx-auto max-w-6xl px-6 pt-8">
-        <div className="flex items-center gap-2 text-ink-900">
-          <ShieldGlyph />
-          <span className="font-semibold tracking-tight">Site Guardian</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-ink-900 dark:text-ink-100">
+            <ShieldGlyph />
+            <span className="font-semibold tracking-tight">Site Guardian</span>
+          </div>
+          <DarkModeToggle />
         </div>
       </header>
 
@@ -47,13 +51,13 @@ export default function Landing() {
           Live on Cloudflare Workers AI
         </span>
 
-        <h1 className="text-5xl md:text-6xl font-semibold tracking-tight text-ink-900 leading-[1.05]">
+        <h1 className="text-5xl md:text-6xl font-semibold tracking-tight text-ink-900 leading-[1.05] dark:text-ink-100">
           Monitor and improve your website
           <br />
-          <span className="text-ink-500">with an AI agent.</span>
+          <span className="text-ink-500 dark:text-ink-400">with an AI agent.</span>
         </h1>
 
-        <p className="mt-6 max-w-xl text-lg text-ink-500 leading-relaxed">
+        <p className="mt-6 max-w-xl text-lg text-ink-500 leading-relaxed dark:text-ink-400">
           Site Guardian scans your site for performance, security, and SEO
           issues, remembers what it finds, and tells you exactly what to fix.
         </p>
@@ -115,8 +119,8 @@ export default function Landing() {
 function Feature({ title, body }: { title: string; body: string }) {
   return (
     <div className="card card-pad text-left transition-transform duration-300 hover:-translate-y-0.5">
-      <h3 className="text-sm font-semibold text-ink-900">{title}</h3>
-      <p className="mt-2 text-sm text-ink-500 leading-relaxed">{body}</p>
+      <h3 className="text-sm font-semibold text-ink-900 dark:text-ink-100">{title}</h3>
+      <p className="mt-2 text-sm text-ink-500 leading-relaxed dark:text-ink-400">{body}</p>
     </div>
   );
 }
@@ -127,11 +131,11 @@ function ShieldGlyph() {
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
         d="M12 2.75 4.5 5.5v6.1c0 4.65 3.2 8.9 7.5 10.15 4.3-1.25 7.5-5.5 7.5-10.15V5.5L12 2.75Z"
-        className="fill-ink-900"
+        className="fill-ink-900 dark:fill-white"
       />
       <path
         d="m9 12.2 2.2 2.2L15.5 10"
-        stroke="white"
+        className="stroke-white dark:stroke-ink-900"
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"

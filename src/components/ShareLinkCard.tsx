@@ -23,9 +23,9 @@ export function ShareLinkCard({ url }: Props) {
   }
 
   return (
-    <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-ink-100 bg-white px-5 py-4 shadow-soft sm:flex-row sm:items-center sm:gap-4">
+    <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-ink-100 bg-white px-5 py-4 shadow-soft sm:flex-row sm:items-center sm:gap-4 dark:border-ink-700 dark:bg-ink-800 dark:shadow-none">
       {/* link icon */}
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink-900/90 text-white">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink-900/90 text-white dark:bg-white dark:text-ink-900">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
           <path
             d="M10 13.5a4 4 0 0 0 5.66 0l2.83-2.83a4 4 0 0 0-5.66-5.66L11.5 6.34M14 10.5a4 4 0 0 0-5.66 0l-2.83 2.83a4 4 0 1 0 5.66 5.66L12.5 17.66"
@@ -38,10 +38,10 @@ export function ShareLinkCard({ url }: Props) {
 
       {/* copy explaining what the url is for */}
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-ink-900">
+        <p className="text-sm font-semibold text-ink-900 dark:text-ink-100">
           Bookmark this link to come back anytime
         </p>
-        <p className="mt-0.5 truncate text-xs text-ink-500">
+        <p className="mt-0.5 truncate text-xs text-ink-500 dark:text-ink-400">
           Your scan history and chat live on Cloudflare. Save this URL (or use
           "Your monitored sites" on the home page) to reopen this agent later.
         </p>
@@ -49,7 +49,7 @@ export function ShareLinkCard({ url }: Props) {
 
       {/* url + copy button */}
       <div className="flex items-center gap-2 sm:ml-auto">
-        <code className="hidden max-w-[20ch] truncate rounded-full border border-ink-200 bg-ink-50 px-3 py-1.5 text-xs text-ink-700 sm:inline md:max-w-[32ch]">
+        <code className="hidden max-w-[20ch] truncate rounded-full border border-ink-200 bg-ink-50 px-3 py-1.5 text-xs text-ink-700 sm:inline md:max-w-[32ch] dark:border-ink-700 dark:bg-ink-900 dark:text-ink-200">
           {url}
         </code>
         <button

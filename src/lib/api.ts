@@ -10,6 +10,20 @@ export interface SecurityHeaderCheck {
   description: string;
 }
 
+// one accessibility issue returned by the analyzer
+export interface A11yIssue {
+  id: string;
+  severity: "high" | "medium" | "low";
+  message: string;
+}
+
+// one broken internal link sampled on the home page
+export interface LinkCheck {
+  url: string;
+  status: number;
+  ok: boolean;
+}
+
 // the big raw scan object returned by the analyzer
 export interface ScanRaw {
   url: string;
@@ -42,13 +56,37 @@ export interface ScanRaw {
     hasOgDescription: boolean;
     lang: string | null;
   };
+  accessibility: {
+    score: number;
+    issues: A11yIssue[];
+    imagesMissingAlt: number;
+    totalImages: number;
+    headingOrderOk: boolean;
+  };
+  tls: {
+    protocol: string | null;
+    cipher: string | null;
+    httpVersion: string | null;
+    country: string | null;
+    colo: string | null;
+  };
+  links: { sampled: number; broken: LinkCheck[] };
   error?: string;
+}
+
+// severity tag on an insight issue
+export type Severity = "critical" | "high" | "medium" | "low";
+
+// one issue line: human text + severity color
+export interface InsightIssue {
+  text: string;
+  severity: Severity;
 }
 
 // what the llm (or fallback) produces for one scan
 export interface ScanInsight {
   summary: string;
-  issues: string[];
+  issues: InsightIssue[];
   fixes: string[];
   scores: { performance: number; security: number; seo: number };
 }
@@ -97,10 +135,7 @@ export interface ChatMessage {
 }
 
 // little wrapper around fetch that parses json and throws on errors
-async function request<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
     headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
@@ -140,12 +175,12 @@ export const api = {
   messages: (agentId: string) =>
     request<ChatMessage[]>(`/api/messages?id=${encodeURIComponent(agentId)}`),
   // stream a chat reply, calling onToken for every token received
-  // resolves with the fully assembled reply once the stream ends
+  // resolves with the fully assembled reply + any tool used for this turn
   chatStream: async (
     agentId: string,
     message: string,
     onToken: (tok: string) => void,
-  ): Promise<string> => {
+  ): Promise<{ text: string; tool: string | null }> => {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -155,6 +190,7 @@ export const api = {
       const text = await res.text();
       throw new Error(text || `request failed: ${res.status}`);
     }
+    const tool = res.headers.get("x-tool");
     // read the SSE stream chunk by chunk
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -184,7 +220,7 @@ export const api = {
         }
       }
     }
-    return assembled;
+    return { text: assembled, tool };
   },
   // update auto-scan settings
   updateSettings: (agentId: string, autoScanIntervalHours: number | null) =>
@@ -192,4 +228,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ agentId, autoScanIntervalHours }),
     }),
+  // wipe the chat transcript
+  clearChat: (agentId: string) =>
+    request<{ ok: true }>("/api/clear-chat", {
+      method: "POST",
+      body: JSON.stringify({ agentId }),
+    }),
+  // destroy the agent and everything about it
+  deleteAgent: (agentId: string) =>
+    request<{ ok: true }>("/api/delete-agent", {
+      method: "POST",
+      body: JSON.stringify({ agentId }),
+    }),
+  // build the url the browser should hit to download an export file
+  exportUrl: (agentId: string) =>
+    `/api/export?id=${encodeURIComponent(agentId)}`,
 };

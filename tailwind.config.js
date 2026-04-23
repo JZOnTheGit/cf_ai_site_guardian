@@ -3,6 +3,8 @@
 export default {
   // scan these files for class names
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  // toggle dark mode with a `dark` class on <html>, set by src/lib/theme.ts
+  darkMode: "class",
   theme: {
     extend: {
       // use inter font first, fall back to system fonts

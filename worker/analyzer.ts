@@ -1,6 +1,9 @@
 // does the deterministic part of a scan
-// fetches the site, times it, checks security headers, pulls basic seo from html
+// fetches the site, times it, checks security headers, pulls basic seo from html,
+// runs a small accessibility audit, inspects tls, and samples for broken links
 // the ai layer reads the output of this file, so keep it stable and json-friendly
+
+import { ssrfReason } from "./security";
 
 // shape of one security header check result
 export interface SecurityHeaderCheck {
@@ -9,6 +12,20 @@ export interface SecurityHeaderCheck {
   value: string | null;
   severity: "high" | "medium" | "low";
   description: string;
+}
+
+// one accessibility issue found on the page
+export interface A11yIssue {
+  id: string;
+  severity: "high" | "medium" | "low";
+  message: string;
+}
+
+// one broken link sampled from the page
+export interface LinkCheck {
+  url: string;
+  status: number;
+  ok: boolean;
 }
 
 // the full raw scan object we hand to the ai
@@ -46,7 +63,34 @@ export interface ScanRaw {
     hasOgDescription: boolean;
     lang: string | null;
   };
+  // accessibility audit result
+  accessibility: {
+    score: number; // 0..100 quick heuristic
+    issues: A11yIssue[];
+    imagesMissingAlt: number;
+    totalImages: number;
+    headingOrderOk: boolean;
+  };
+  // tls / network info pulled from request.cf when available
+  tls: {
+    protocol: string | null;
+    cipher: string | null;
+    httpVersion: string | null;
+    country: string | null;
+    colo: string | null;
+  };
+  // small sample of broken links found on the home page
+  links: {
+    sampled: number;
+    broken: LinkCheck[];
+  };
   error?: string;
+}
+
+// shape of what we gather during one scan, kept small on purpose
+interface ScanOptions {
+  // skip broken-link probes, used by tests or low-cost scans
+  checkLinks?: boolean;
 }
 
 // list of security headers we care about + why they matter
@@ -86,6 +130,12 @@ const SECURITY_HEADERS: Array<Omit<SecurityHeaderCheck, "present" | "value">> = 
   },
 ];
 
+// hard caps so a hostile site cannot exhaust our worker
+const FETCH_TIMEOUT_MS = 15_000;
+const MAX_BYTES = 2 * 1024 * 1024; // 2 MB cap on html body
+const LINK_SAMPLE_LIMIT = 10;
+const LINK_CHECK_TIMEOUT_MS = 5_000;
+
 // add https:// if the user didn't type it
 function normalizeUrl(raw: string): string {
   let u = raw.trim();
@@ -94,10 +144,12 @@ function normalizeUrl(raw: string): string {
 }
 
 // quick sanity check before we make an agent for this url
+// also blocks internal / metadata hosts (ssrf protection)
 export function isValidUrl(raw: string): boolean {
   try {
-    const u = new URL(normalizeUrl(raw));
-    return u.protocol === "http:" || u.protocol === "https:";
+    const u = normalizeUrl(raw);
+    // ssrfReason returns null when the url is safe
+    return ssrfReason(u) === null;
   } catch {
     return false;
   }
@@ -122,25 +174,226 @@ function pickMeta(html: string, name: string): string | null {
   return m ? m[1] : null;
 }
 
+// read up to MAX_BYTES from a response body to avoid memory blowups
+async function readBodyCapped(res: Response): Promise<string> {
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_BYTES) {
+      try {
+        await reader.cancel();
+      } catch {
+        // we already have what we need, ignore
+      }
+      break;
+    }
+    chunks.push(value);
+  }
+  return new TextDecoder().decode(concat(chunks));
+}
+
+// glue Uint8Array chunks together into one buffer
+function concat(chunks: Uint8Array[]): Uint8Array {
+  const total = chunks.reduce((n, c) => n + c.byteLength, 0);
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.byteLength;
+  }
+  return out;
+}
+
+// fetch with a hard timeout, so a slow origin cannot hang the worker
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// pull the first N same-origin links out of the html for a broken-link probe
+function extractInternalLinks(html: string, origin: string, limit: number): string[] {
+  const links = new Set<string>();
+  const re = /<a[^>]+href=["']([^"']+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null && links.size < limit) {
+    const href = m[1];
+    if (!href || href.startsWith("#") || href.startsWith("mailto:")) continue;
+    try {
+      const u = new URL(href, origin);
+      // skip non-http and cross-origin
+      if (u.protocol !== "http:" && u.protocol !== "https:") continue;
+      if (u.origin !== origin) continue;
+      // ssrf guard in case the site links to something like 127.0.0.1
+      if (ssrfReason(u.toString())) continue;
+      links.add(u.toString());
+    } catch {
+      // skip malformed hrefs
+    }
+  }
+  return Array.from(links);
+}
+
+// probe a list of links with HEAD (fallback to GET) and return any 4xx/5xx
+async function checkLinks(urls: string[]): Promise<LinkCheck[]> {
+  const results = await Promise.all(
+    urls.map(async (u) => {
+      try {
+        let res = await fetchWithTimeout(
+          u,
+          { method: "HEAD", redirect: "follow" },
+          LINK_CHECK_TIMEOUT_MS,
+        );
+        // some servers reject HEAD, retry once with a range GET
+        if (res.status === 405 || res.status === 501) {
+          res = await fetchWithTimeout(
+            u,
+            { method: "GET", redirect: "follow", headers: { range: "bytes=0-0" } },
+            LINK_CHECK_TIMEOUT_MS,
+          );
+        }
+        return { url: u, status: res.status, ok: res.ok };
+      } catch {
+        return { url: u, status: 0, ok: false };
+      }
+    }),
+  );
+  // only return broken ones, the full count is reported separately
+  return results.filter((r) => !r.ok);
+}
+
+// quick accessibility heuristic based on the raw html
+// not a full axe audit, but catches the common stuff and is zero cost
+function runA11y(html: string, seoLang: string | null): ScanRaw["accessibility"] {
+  const issues: A11yIssue[] = [];
+
+  // images without an alt attribute
+  const imgTags = html.match(/<img\b[^>]*>/gi) ?? [];
+  const imagesMissingAlt = imgTags.filter((t) => !/\balt=/i.test(t)).length;
+  if (imagesMissingAlt > 0) {
+    issues.push({
+      id: "img-alt",
+      severity: "high",
+      message: `${imagesMissingAlt} image(s) missing alt text.`,
+    });
+  }
+
+  // document language
+  if (!seoLang) {
+    issues.push({
+      id: "html-lang",
+      severity: "medium",
+      message: "<html> element is missing a lang attribute.",
+    });
+  }
+
+  // buttons / links with no discernible text
+  const emptyButtons = (
+    html.match(/<button[^>]*>\s*<\/button>/gi) ?? []
+  ).length;
+  if (emptyButtons > 0) {
+    issues.push({
+      id: "empty-button",
+      severity: "medium",
+      message: `${emptyButtons} button(s) with no visible text.`,
+    });
+  }
+
+  // heading order: very rough check that h1 appears before any h2/h3
+  const headingOrderOk = (() => {
+    const firstH1 = html.search(/<h1\b/i);
+    const firstH2 = html.search(/<h2\b/i);
+    if (firstH1 < 0 || firstH2 < 0) return true;
+    return firstH1 < firstH2;
+  })();
+  if (!headingOrderOk) {
+    issues.push({
+      id: "heading-order",
+      severity: "low",
+      message: "<h2> appears before <h1>; headings should be in document order.",
+    });
+  }
+
+  // landmark: look for something that indicates a main landmark
+  const hasMain = /<main\b/i.test(html) || /role=["']main["']/i.test(html);
+  if (!hasMain) {
+    issues.push({
+      id: "main-landmark",
+      severity: "low",
+      message: "No <main> element or role=\"main\" landmark found.",
+    });
+  }
+
+  // score is 100 minus weighted penalties for each issue
+  const weight = { high: 25, medium: 10, low: 5 } as const;
+  const penalty = issues.reduce((acc, i) => acc + weight[i.severity], 0);
+
+  return {
+    score: Math.max(0, 100 - penalty),
+    issues,
+    imagesMissingAlt,
+    totalImages: imgTags.length,
+    headingOrderOk,
+  };
+}
+
+// pull tls info from the response's cf object, which cloudflare fills in
+function readTls(res: Response): ScanRaw["tls"] {
+  const cf: any = (res as any).cf ?? {};
+  return {
+    protocol: cf.tlsVersion ?? null,
+    cipher: cf.tlsCipher ?? null,
+    httpVersion: cf.httpProtocol ?? null,
+    country: cf.country ?? null,
+    colo: cf.colo ?? null,
+  };
+}
+
 // main scan function, called by the durable object
-export async function runScan(rawUrl: string): Promise<ScanRaw> {
+export async function runScan(
+  rawUrl: string,
+  opts: ScanOptions = { checkLinks: true },
+): Promise<ScanRaw> {
   const url = normalizeUrl(rawUrl);
+
+  // refuse to scan private / internal endpoints
+  const blocked = ssrfReason(url);
+  if (blocked) return emptyScan(url, blocked);
+
   // start a timer so we can report ttfb
   const startedAt = Date.now();
 
-  // try to fetch the page, bail out cleanly if it fails
+  // try to fetch the page with a hard timeout, bail out cleanly if it fails
   let response: Response;
   try {
-    response = await fetch(url, {
-      method: "GET",
-      redirect: "follow",
-      headers: {
-        "user-agent":
-          "SiteGuardianBot/1.0 (+https://github.com/; Cloudflare Workers AI)",
-        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    response = await fetchWithTimeout(
+      url,
+      {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          "user-agent":
+            "SiteGuardianBot/1.0 (+https://github.com/; Cloudflare Workers AI)",
+          accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+        cf: { cacheTtl: 0, cacheEverything: false },
       },
-      cf: { cacheTtl: 0, cacheEverything: false },
-    });
+      FETCH_TIMEOUT_MS,
+    );
   } catch (err: any) {
     return emptyScan(url, err?.message ?? "fetch failed");
   }
@@ -153,10 +406,9 @@ export async function runScan(rawUrl: string): Promise<ScanRaw> {
 
   // ttfb is measured right after the response arrives
   const ttfbMs = Date.now() - startedAt;
-  // only download html, not binary stuff
-  const html = response.headers.get("content-type")?.includes("text/")
-    ? await response.text()
-    : "";
+  // only download html, not binary stuff, and cap the size
+  const ct = response.headers.get("content-type") ?? "";
+  const html = ct.includes("text/") ? await readBodyCapped(response) : "";
   const totalMs = Date.now() - startedAt;
   const htmlBytes = new TextEncoder().encode(html).length;
 
@@ -185,10 +437,30 @@ export async function runScan(rawUrl: string): Promise<ScanRaw> {
     countMatches(html, /<link[^>]+rel=["']stylesheet["']/gi) +
     countMatches(html, /<img\b/gi);
 
+  // accessibility audit
+  const accessibility = runA11y(html, lang);
+
+  // tls + network info
+  const tls = readTls(response);
+
+  // broken link sample, only if enabled and the fetch succeeded
+  const finalUrl = response.url || url;
+  let links: ScanRaw["links"] = { sampled: 0, broken: [] };
+  if (opts.checkLinks && response.ok && html) {
+    try {
+      const origin = new URL(finalUrl).origin;
+      const sampled = extractInternalLinks(html, origin, LINK_SAMPLE_LIMIT);
+      const broken = sampled.length ? await checkLinks(sampled) : [];
+      links = { sampled: sampled.length, broken };
+    } catch {
+      // leave links empty if anything blew up, not worth failing the scan over
+    }
+  }
+
   // return the big structured scan object
   return {
     url,
-    finalUrl: response.url || url,
+    finalUrl,
     status: response.status,
     ok: response.ok,
     ttfbMs,
@@ -220,6 +492,9 @@ export async function runScan(rawUrl: string): Promise<ScanRaw> {
       hasOgDescription: !!ogDescription,
       lang,
     },
+    accessibility,
+    tls,
+    links,
   };
 }
 
@@ -256,6 +531,15 @@ function emptyScan(url: string, error: string): ScanRaw {
       hasOgDescription: false,
       lang: null,
     },
+    accessibility: {
+      score: 0,
+      issues: [],
+      imagesMissingAlt: 0,
+      totalImages: 0,
+      headingOrderOk: true,
+    },
+    tls: { protocol: null, cipher: null, httpVersion: null, country: null, colo: null },
+    links: { sampled: 0, broken: [] },
     error,
   };
 }
@@ -276,7 +560,11 @@ export function heuristicScores(scan: ScanRaw): {
 
   // security score loses 15 points per missing header
   const missing = scan.security.missingCount;
-  const security = Math.max(0, 100 - missing * 15);
+  let security = Math.max(0, 100 - missing * 15);
+  // also penalize weak tls protocols if we have the data
+  if (scan.tls.protocol && /tls\s*1\.0|tls\s*1\.1/i.test(scan.tls.protocol)) {
+    security = Math.max(0, security - 20);
+  }
 
   // seo score starts at 100 and we subtract for each problem
   let seoScore = 100;

@@ -1,0 +1,46 @@
+# ci for site guardian
+# runs typecheck, lint, unit tests and a wrangler dry-run on every push
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: cf_ai_site_guardian/package-lock.json
+
+      - name: install deps
+        working-directory: cf_ai_site_guardian
+        run: npm ci || npm install
+
+      - name: typecheck
+        working-directory: cf_ai_site_guardian
+        run: npm run typecheck
+
+      - name: lint
+        working-directory: cf_ai_site_guardian
+        run: npm run lint || true
+
+      - name: unit tests
+        working-directory: cf_ai_site_guardian
+        run: npm test
+
+      - name: build frontend
+        working-directory: cf_ai_site_guardian
+        run: npm run build
+
+      - name: wrangler dry run
+        working-directory: cf_ai_site_guardian
+        run: npx wrangler deploy --dry-run
