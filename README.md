@@ -1,5 +1,11 @@
 # cf_ai_site_guardian
 
+### [Try it live: cf-ai-site-guardian.jass150505.workers.dev](https://cf-ai-site-guardian.jass150505.workers.dev)
+
+[![Live on Cloudflare](https://img.shields.io/badge/Live-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white)](https://cf-ai-site-guardian.jass150505.workers.dev)
+[![Workers AI](https://img.shields.io/badge/Workers%20AI-Llama%203.3-0a84ff)](https://developers.cloudflare.com/workers-ai/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+
 **Site Guardian** is a full-stack AI agent built on Cloudflare that continuously
 monitors a website's performance, security, and basic SEO, and explains what
 to fix in plain English.
@@ -14,8 +20,16 @@ site's real scan history.
 
 ## Live demo
 
-- Deployed URL: _(fill in after your first `npm run deploy`)_
-- Repo name is prefixed with `cf_ai_` per the assignment spec.
+Open **[cf-ai-site-guardian.jass150505.workers.dev](https://cf-ai-site-guardian.jass150505.workers.dev)**, paste any URL (try your own site or `example.com`), and the agent will:
+
+1. Spin up a fresh Durable Object instance for that URL
+2. Fetch the site, measure TTFB, inspect security headers, and extract basic SEO
+3. Ask Llama 3.3 on Workers AI for a summary, issues, fixes, and 0-100 scores
+4. Let you chat with the agent, grounded in everything it has seen so far
+
+Click **Run new scan** any time to add a new entry to the timeline, and the agent will automatically compare it to the previous scan and surface regressions or improvements.
+
+> Repo name is prefixed with `cf_ai_` per the assignment spec.
 
 ## Screenshots
 
@@ -225,6 +239,7 @@ This runs `vite build` and then `wrangler deploy`, which:
 3. Creates / migrates the `SiteAgent` Durable Object class.
 
 Your app will be live at `https://cf-ai-site-guardian.<your-subdomain>.workers.dev`.
+The current deployment lives at **[cf-ai-site-guardian.jass150505.workers.dev](https://cf-ai-site-guardian.jass150505.workers.dev)**.
 
 ---
 
