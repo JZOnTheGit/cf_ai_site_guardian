@@ -1,0 +1,68 @@
+/* tailwind base styles, component classes, and utilities */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* make the root element fill the viewport */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* turn on some nicer inter font features */
+body {
+  font-feature-settings:
+    "cv11",
+    "ss01",
+    "ss03";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* reusable component classes for the apple-style ui */
+@layer components {
+  /* rounded white card with subtle shadow */
+  .card {
+    @apply rounded-2xl bg-white shadow-card border border-ink-100/70;
+  }
+  /* standard inner padding for a card */
+  .card-pad {
+    @apply p-6;
+  }
+  /* main cta button, dark pill */
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-full bg-ink-900 px-5 py-2.5 text-sm font-medium text-white
+      transition-all duration-200 hover:bg-ink-800 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  /* secondary button, light pill */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-medium text-ink-800
+      border border-ink-200 transition-all duration-200 hover:bg-ink-50 active:scale-[0.98] disabled:opacity-50;
+  }
+  /* big rounded text input used on the landing page */
+  .input {
+    @apply w-full rounded-full border border-ink-200 bg-white px-5 py-3.5 text-base
+      placeholder:text-ink-400 shadow-soft focus:outline-none focus:ring-2 focus:ring-ink-900/10
+      focus:border-ink-300 transition;
+  }
+  /* small rounded chip used for tags and hints */
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-ink-200 bg-white px-2.5 py-1 text-xs font-medium text-ink-600;
+  }
+}
+
+/* tiny fade-in animation for pages */
+.fade-in {
+  animation: fadeIn 250ms ease-out both;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

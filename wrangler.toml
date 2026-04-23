@@ -1,0 +1,29 @@
+# basic worker config
+name = "cf-ai-site-guardian"
+main = "worker/index.ts"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# serve the built vite app from ./dist as static assets
+# worker handles /api/* and assets handles everything else with spa fallback
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# workers ai binding used for llama 3.3 chat + insights
+[ai]
+binding = "AI"
+
+# durable object that stores per-site memory and runs the agent logic
+[[durable_objects.bindings]]
+name = "SITE_AGENT"
+class_name = "SiteAgent"
+
+# tells cloudflare the DO uses sqlite storage
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SiteAgent"]
+
+[observability]
+enabled = true
