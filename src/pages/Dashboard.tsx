@@ -56,11 +56,11 @@ export default function Dashboard() {
   }, [refresh]);
 
   // auto-kick a first scan if the agent has no history yet
+  // runScan is defined below so we intentionally don't list it as a dep
   useEffect(() => {
     if (!loading && snapshot && !snapshot.latest && !scanning) {
       runScan();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, snapshot]);
 
   // kick off a scan then refresh the page data

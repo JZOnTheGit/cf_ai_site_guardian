@@ -31,7 +31,7 @@ jobs:
 
       - name: lint
         working-directory: cf_ai_site_guardian
-        run: npm run lint || true
+        run: npm run lint
 
       - name: unit tests
         working-directory: cf_ai_site_guardian

@@ -1,9 +1,9 @@
 # PROMPTS.md
 
-Every prompt Site Guardian uses with an LLM is documented here verbatim. The
-canonical source is `worker/prompts.ts`, this file just mirrors it for
-reviewers. Model: `@cf/meta/llama-3.3-70b-instruct-fp8-fast` on Workers AI.
-Structured calls use `jsonMode: true` where available.
+Every prompt Site Guardian sends to the LLM is listed here. The real source
+is `worker/prompts.ts`, this file is just a copy so reviewers don't have to
+dig through the TypeScript. Model is `@cf/meta/llama-3.3-70b-instruct-fp8-fast`
+on Workers AI. JSON-returning calls use `response_format: { type: "json_object" }`.
 
 ---
 
