@@ -41,6 +41,8 @@ changes vs. the previous scan.
 
 ## What's new in 1.1.0
 
+> **1.1.1 patch**: per-device random agent IDs (privacy fix, no more cross-user data) and mobile-friendly landing + dashboard layouts. See [`CHANGELOG.md`](./CHANGELOG.md).
+
 See [`CHANGELOG.md`](./CHANGELOG.md) for the full list. Highlights:
 
 - **AI tool-use**: the chat agent can call `get_latest_scan`, `list_history`,

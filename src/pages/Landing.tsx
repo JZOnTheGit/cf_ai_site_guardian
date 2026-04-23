@@ -44,7 +44,7 @@ export default function Landing() {
   return (
     <div className="min-h-full bg-gradient-to-b from-white via-ink-50 to-ink-50 dark:from-ink-900 dark:via-ink-900 dark:to-ink-900">
       {/* top bar with the product name + theme toggle */}
-      <header className="mx-auto max-w-6xl px-6 pt-8">
+      <header className="mx-auto max-w-6xl px-4 pt-6 sm:px-6 sm:pt-8">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-ink-900 dark:text-ink-100">
             <ShieldGlyph />
@@ -55,19 +55,19 @@ export default function Landing() {
       </header>
 
       {/* hero section */}
-      <main className="mx-auto flex max-w-3xl flex-col items-center px-6 pt-24 pb-24 text-center fade-in">
+      <main className="mx-auto flex max-w-3xl flex-col items-center px-4 pt-14 pb-16 text-center fade-in sm:px-6 sm:pt-24 sm:pb-24">
         <span className="pill mb-6">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
           Live on Cloudflare Workers AI
         </span>
 
-        <h1 className="text-5xl md:text-6xl font-semibold tracking-tight text-ink-900 leading-[1.05] dark:text-ink-100">
+        <h1 className="text-4xl font-semibold tracking-tight text-ink-900 leading-[1.05] sm:text-5xl md:text-6xl dark:text-ink-100">
           Monitor and improve your website
           <br />
           <span className="text-ink-500 dark:text-ink-400">with an AI agent.</span>
         </h1>
 
-        <p className="mt-6 max-w-xl text-lg text-ink-500 leading-relaxed dark:text-ink-400">
+        <p className="mt-5 max-w-xl text-base leading-relaxed text-ink-500 sm:mt-6 sm:text-lg dark:text-ink-400">
           Site Guardian scans your site for performance, security, and SEO
           issues, remembers what it finds, and tells you exactly what to fix.
         </p>
@@ -98,7 +98,7 @@ export default function Landing() {
         )}
 
         {/* small row of feature cards */}
-        <div className="mt-20 grid w-full max-w-4xl gap-4 sm:grid-cols-3">
+        <div className="mt-14 grid w-full max-w-4xl gap-4 sm:mt-20 sm:grid-cols-3">
           <Feature
             title="Performance"
             body="Measure TTFB, response size, and asset load, with AI explaining every regression."

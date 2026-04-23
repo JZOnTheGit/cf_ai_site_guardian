@@ -187,14 +187,14 @@ export default function Dashboard() {
       {/* relative + high z-index so popovers (overflow menu, dark-mode, */}
       {/* auto-scan) always paint above the main content's stacking context */}
       <header className="relative z-30 border-b border-ink-100 bg-white/80 backdrop-blur dark:border-ink-700 dark:bg-ink-900/80">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3 sm:px-6 sm:py-4">
           <Link to="/" className="flex items-center gap-2 text-ink-900 dark:text-ink-100">
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ink-900 text-[11px] font-semibold text-white dark:bg-white dark:text-ink-900">
               SG
             </span>
             <span className="font-semibold tracking-tight">Site Guardian</span>
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
             {/* status pill */}
             <div className="hidden items-center gap-2 md:flex">
               <span className={`h-2 w-2 rounded-full ${status.color}`} />
@@ -232,14 +232,14 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-6 pt-10 fade-in">
+      <main className="mx-auto max-w-7xl px-4 pt-6 fade-in sm:px-6 sm:pt-10">
         {/* title bar with site url and last scan time */}
         <section className="flex flex-col gap-2">
           <p className="text-xs uppercase tracking-wider text-ink-400">
             Monitored site
           </p>
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h1 className="text-3xl font-semibold tracking-tight text-ink-900 dark:text-ink-100">
+            <h1 className="break-all text-2xl font-semibold tracking-tight text-ink-900 sm:text-3xl dark:text-ink-100">
               {meta?.url ?? (loading ? "Loading..." : "Unknown")}
             </h1>
             {latest && (

@@ -2,7 +2,7 @@
 
 All notable changes to Site Guardian are tracked in this file.
 
-## [1.1.1] - Per-device agents (privacy fix)
+## [1.1.1] - Per-device agents (privacy fix) + mobile polish
 
 ### Fixed
 
@@ -18,6 +18,17 @@ All notable changes to Site Guardian are tracked in this file.
 
 Existing agents remain accessible via their current URLs; only new creates
 are affected.
+
+### Changed - Mobile layout
+
+- Landing page: tighter hero padding on small screens, smaller headline at
+  the `sm` breakpoint, reduced gap before the feature cards.
+- Dashboard header: now wraps onto two rows on narrow widths instead of
+  overflowing, reduced padding, toolbar right-aligns when wrapping.
+- Dashboard title: smaller font on mobile and `break-all` so long URLs
+  wrap instead of pushing the layout wider than the viewport.
+- Chat panel: shorter minimum height on mobile so the message list and
+  input stay visible without requiring a scroll to reach them.
 
 ## [1.1.0] - Tier 2: deep upgrade
 

@@ -117,7 +117,7 @@ export function ChatPanel({ agentId, onToast, inputRef }: Props) {
   return (
     // fixed height on mobile, viewport-bounded on desktop so the message list
     // scrolls inside the card instead of pushing the whole panel down the page
-    <div className="card flex h-[600px] min-h-[560px] flex-col lg:h-[calc(100vh-3rem)] lg:max-h-[820px]">
+    <div className="card flex h-[540px] min-h-[460px] flex-col sm:h-[600px] sm:min-h-[560px] lg:h-[calc(100vh-3rem)] lg:max-h-[820px]">
       {/* header with a tiny agent avatar + clear button */}
       <header className="flex items-center justify-between border-b border-ink-100 px-5 py-4 dark:border-ink-700">
         <div className="flex items-center gap-2">
