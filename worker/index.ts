@@ -102,7 +102,7 @@ export default {
         return forward(res);
       }
 
-      // send one chat message and get a reply
+      // send one chat message and get a streaming reply back
       if (url.pathname === "/api/chat" && request.method === "POST") {
         const { agentId, message } = await request.json<{
           agentId?: string;
@@ -114,6 +114,31 @@ export default {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ message }),
+        });
+        // pass the DO's stream response straight through to the client
+        return new Response(res.body, {
+          status: res.status,
+          headers: {
+            "content-type":
+              res.headers.get("content-type") ?? "text/event-stream",
+            "cache-control": "no-cache, no-transform",
+          },
+        });
+      }
+
+      // update auto-scan settings for an agent
+      if (url.pathname === "/api/settings" && request.method === "POST") {
+        const body = await request.json<{
+          agentId?: string;
+          autoScanIntervalHours?: number | null;
+        }>();
+        if (!body.agentId) return j({ error: "missing agentId" }, 400);
+        const res = await callAgent(env, body.agentId, "/settings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            autoScanIntervalHours: body.autoScanIntervalHours ?? null,
+          }),
         });
         return forward(res);
       }

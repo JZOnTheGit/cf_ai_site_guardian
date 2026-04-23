@@ -2,11 +2,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type AgentSnapshot } from "../lib/api";
+import { rememberSite } from "../lib/storage";
 import { ScoreCard } from "../components/ScoreCard";
 import { IssueList } from "../components/IssueList";
 import { SecurityHeaders } from "../components/SecurityHeaders";
 import { Timeline } from "../components/Timeline";
 import { ChatPanel } from "../components/ChatPanel";
+import { ShareLinkCard } from "../components/ShareLinkCard";
+import { AutoScanControl } from "../components/AutoScanControl";
 
 export default function Dashboard() {
   // agent id comes from the url segment
@@ -24,6 +27,10 @@ export default function Dashboard() {
     try {
       const s = await api.snapshot(agentId);
       setSnapshot(s);
+      // also bookmark this agent in the browser so the landing page can find it
+      if (s.meta?.url) {
+        rememberSite({ agentId, url: s.meta.url });
+      }
     } catch (err: any) {
       setError(err?.message ?? "Failed to load agent");
     } finally {
@@ -62,6 +69,33 @@ export default function Dashboard() {
   const latest = snapshot?.latest ?? null;
   const meta = snapshot?.meta ?? null;
 
+  // per-score history arrays in chronological order, fed into sparklines
+  // snapshot.history comes back newest-first so we reverse it
+  const perfHistory = useMemo(
+    () =>
+      (snapshot?.history ?? [])
+        .slice()
+        .reverse()
+        .map((h) => h.scores.performance),
+    [snapshot],
+  );
+  const secHistory = useMemo(
+    () =>
+      (snapshot?.history ?? [])
+        .slice()
+        .reverse()
+        .map((h) => h.scores.security),
+    [snapshot],
+  );
+  const seoHistory = useMemo(
+    () =>
+      (snapshot?.history ?? [])
+        .slice()
+        .reverse()
+        .map((h) => h.scores.seo),
+    [snapshot],
+  );
+
   // overall status pill label + dot color, based on average score
   const status = useMemo(() => {
     if (!latest) return { label: "Awaiting first scan", color: "bg-ink-300" };
@@ -90,10 +124,20 @@ export default function Dashboard() {
           </Link>
           <div className="flex items-center gap-3">
             {/* status pill */}
-            <div className="hidden items-center gap-2 sm:flex">
+            <div className="hidden items-center gap-2 md:flex">
               <span className={`h-2 w-2 rounded-full ${status.color}`} />
               <span className="text-xs text-ink-500">{status.label}</span>
             </div>
+            {/* auto-scan schedule control, persists in the durable object */}
+            {snapshot?.settings && (
+              <AutoScanControl
+                agentId={agentId}
+                settings={snapshot.settings}
+                onChange={(next) =>
+                  setSnapshot((s) => (s ? { ...s, settings: next } : s))
+                }
+              />
+            )}
             {/* manual scan trigger */}
             <button
               className="btn-primary"
@@ -123,6 +167,11 @@ export default function Dashboard() {
             )}
           </div>
         </section>
+
+        {/* tells the user this url is a permanent bookmark to this agent */}
+        {!loading && meta && (
+          <ShareLinkCard url={window.location.href} />
+        )}
 
         {/* error banner if something went wrong */}
         {error && (
@@ -190,11 +239,12 @@ export default function Dashboard() {
                   )}
               </div>
 
-              {/* three score cards side by side */}
+              {/* three score cards side by side, each with a sparkline trend */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <ScoreCard
                   label="Performance"
                   score={latest?.insight.scores.performance ?? 0}
+                  history={perfHistory}
                   hint={
                     latest
                       ? `TTFB ${latest.raw.performance.ttfbMs} ms · ${formatBytes(
@@ -206,6 +256,7 @@ export default function Dashboard() {
                 <ScoreCard
                   label="Security"
                   score={latest?.insight.scores.security ?? 0}
+                  history={secHistory}
                   hint={
                     latest
                       ? `${latest.raw.security.missingCount} missing headers`
@@ -215,6 +266,7 @@ export default function Dashboard() {
                 <ScoreCard
                   label="SEO"
                   score={latest?.insight.scores.seo ?? 0}
+                  history={seoHistory}
                   hint={
                     latest
                       ? `${latest.raw.seo.h1Count} h1 · ${

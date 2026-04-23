@@ -2,6 +2,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import { rememberSite } from "../lib/storage";
+import { RecentSites } from "../components/RecentSites";
 
 export default function Landing() {
   // local form state
@@ -17,7 +19,9 @@ export default function Landing() {
     if (!url.trim()) return;
     setLoading(true);
     try {
-      const { agentId } = await api.createAgent(url.trim());
+      const { agentId, url: savedUrl } = await api.createAgent(url.trim());
+      // remember this site in the browser so it shows up in recent sites
+      rememberSite({ agentId, url: savedUrl });
       navigate(`/site/${encodeURIComponent(agentId)}`);
     } catch (err: any) {
       setError(err?.message ?? "Something went wrong.");
@@ -94,6 +98,9 @@ export default function Landing() {
             body="Titles, meta descriptions, headings, canonical tags, watched over time."
           />
         </div>
+
+        {/* list of sites this browser has opened before */}
+        <RecentSites />
       </main>
 
       {/* footer credit */}

@@ -7,7 +7,7 @@ import { runScan, isValidUrl, type ScanRaw } from "./analyzer";
 import {
   generateScanInsight,
   generateCompareInsight,
-  runChat,
+  runChatStream,
   type ScanInsight,
   type CompareInsight,
   type ChatMessage,
@@ -28,10 +28,19 @@ interface AgentMeta {
   createdAt: number;
 }
 
+// per-agent settings, including the auto-scan schedule
+export interface AgentSettings {
+  // null means auto-scan is off
+  autoScanIntervalHours: number | null;
+  // timestamp of the next scheduled auto-scan, for display in the ui
+  nextScanAt: number | null;
+}
+
 // shape returned by /snapshot for the dashboard
 export interface AgentSnapshot {
   meta: AgentMeta | null;
   latest: ScanRecord | null;
+  settings: AgentSettings;
   history: Array<{
     id: string;
     at: number;
@@ -40,6 +49,12 @@ export interface AgentSnapshot {
     ok: boolean;
   }>;
 }
+
+// default settings used when a brand new agent is created
+const DEFAULT_SETTINGS: AgentSettings = {
+  autoScanIntervalHours: null,
+  nextScanAt: null,
+};
 
 // the durable object class itself
 export class SiteAgent extends DurableObject<Env> {
@@ -83,9 +98,11 @@ export class SiteAgent extends DurableObject<Env> {
         case "/history":
           return json(await this.history());
         case "/chat":
-          return json(await this.chat(await request.json<{ message: string }>()));
+          return this.chatStream(await request.json<{ message: string }>());
         case "/messages":
           return json(await this.messages());
+        case "/settings":
+          return json(await this.updateSettings(await request.json<Partial<AgentSettings>>()));
         default:
           return new Response("not found", { status: 404 });
       }
@@ -154,8 +171,57 @@ export class SiteAgent extends DurableObject<Env> {
     return {
       meta: this.getMeta(),
       latest: this.latestScan(),
+      settings: this.getSettings(),
       history: this.historySummary(),
     };
+  }
+
+  // update the auto-scan settings and reschedule the next alarm
+  async updateSettings(patch: Partial<AgentSettings>): Promise<AgentSettings> {
+    const current = this.getSettings();
+    const next: AgentSettings = {
+      autoScanIntervalHours:
+        patch.autoScanIntervalHours === undefined
+          ? current.autoScanIntervalHours
+          : patch.autoScanIntervalHours,
+      nextScanAt: current.nextScanAt,
+    };
+
+    // cancel any existing alarm, we will re-create one if auto-scan is still on
+    await this.ctx.storage.deleteAlarm();
+
+    if (next.autoScanIntervalHours && next.autoScanIntervalHours > 0) {
+      // schedule the next scan N hours from now
+      const nextAt = Date.now() + next.autoScanIntervalHours * 60 * 60 * 1000;
+      await this.ctx.storage.setAlarm(nextAt);
+      next.nextScanAt = nextAt;
+    } else {
+      // auto-scan is off, no next time
+      next.nextScanAt = null;
+    }
+
+    this.setSettings(next);
+    return next;
+  }
+
+  // fires when the durable object's alarm goes off
+  // this is how the agent runs autonomously without any open browser tab
+  override async alarm(): Promise<void> {
+    const settings = this.getSettings();
+    // guard against stale alarms if the user turned auto-scan off
+    if (!settings.autoScanIntervalHours) return;
+
+    // run a fresh scan (insight + compare + save to sqlite)
+    try {
+      await this.scan();
+    } catch (err) {
+      console.error("alarm scan failed", err);
+    }
+
+    // reschedule the next alarm so monitoring is continuous
+    const nextAt = Date.now() + settings.autoScanIntervalHours * 60 * 60 * 1000;
+    await this.ctx.storage.setAlarm(nextAt);
+    this.setSettings({ ...settings, nextScanAt: nextAt });
   }
 
   // full history, newest first, capped at 50
@@ -166,18 +232,29 @@ export class SiteAgent extends DurableObject<Env> {
     return rows.map((r) => JSON.parse(r.payload) as ScanRecord);
   }
 
-  // run one chat turn and save both the question and answer
-  async chat({ message }: { message: string }): Promise<{
-    reply: string;
-    history: ChatMessage[];
-  }> {
+  // run one chat turn as a streaming response
+  // tokens are piped to the client live, and the final reply is saved to sqlite
+  async chatStream({ message }: { message: string }): Promise<Response> {
     const meta = this.getMeta();
-    if (!meta) throw new Error("agent not initialized");
+    if (!meta) {
+      return new Response(JSON.stringify({ error: "agent not initialized" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    }
     const text = (message ?? "").toString().trim();
-    if (!text) throw new Error("empty message");
+    if (!text) {
+      return new Response(JSON.stringify({ error: "empty message" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }
 
-    // load prior turns so the llm has memory
-    const prior = this.loadMessages();
+    // save the user message immediately so it shows up in memory right away
+    this.saveMessage({ role: "user", content: text });
+
+    // load prior turns (now includes the just-saved user message)
+    const prior = this.loadMessages().slice(0, -1);
     // build the fresh context the llm gets as a system message
     const context = JSON.stringify(
       {
@@ -189,14 +266,57 @@ export class SiteAgent extends DurableObject<Env> {
       2,
     );
 
-    // call the model
-    const reply = await runChat(this.env.AI, context, prior, text);
+    // ask workers ai for a streaming completion
+    const upstream = await runChatStream(this.env.AI, context, prior, text);
 
-    // persist the user message and the assistant reply
-    this.saveMessage({ role: "user", content: text });
-    this.saveMessage({ role: "assistant", content: reply });
+    // split the stream: one side goes to the client, the other we drain here
+    // to rebuild the full assistant reply so we can persist it to sqlite.
+    // waitUntil keeps the durable object alive until the save completes.
+    const [forClient, forSave] = upstream.tee();
 
-    return { reply, history: this.loadMessages() };
+    this.ctx.waitUntil(
+      (async () => {
+        // buffer across chunks so we never lose a partial SSE line
+        const reader = forSave.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let assembled = "";
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            // SSE frames are newline-delimited, keep the last partial line
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+            for (const line of lines) {
+              const tok = extractToken(line);
+              if (tok) assembled += tok;
+            }
+          }
+          // flush any trailing bytes and the final partial line
+          buffer += decoder.decode();
+          if (buffer) {
+            const tok = extractToken(buffer);
+            if (tok) assembled += tok;
+          }
+        } catch (err) {
+          console.error("chat save reader failed", err);
+        }
+        // persist the assembled reply. If the model truly returned nothing,
+        // save a clearly marked fallback so the transcript is still coherent.
+        const final = assembled.trim() || "(model returned no text)";
+        this.saveMessage({ role: "assistant", content: final });
+      })(),
+    );
+
+    // return the other branch of the stream to the caller untouched
+    return new Response(forClient, {
+      headers: {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache, no-transform",
+      },
+    });
   }
 
   // just the chat transcript, used when the chat panel first loads
@@ -220,6 +340,28 @@ export class SiteAgent extends DurableObject<Env> {
       `INSERT INTO meta (k, v) VALUES ('meta', ?)
        ON CONFLICT(k) DO UPDATE SET v = excluded.v`,
       JSON.stringify(meta),
+    );
+  }
+
+  // read the settings row, falling back to defaults on first run
+  private getSettings(): AgentSettings {
+    const row = this.ctx.storage.sql
+      .exec<{ v: string }>(`SELECT v FROM meta WHERE k = 'settings'`)
+      .toArray()[0];
+    if (!row) return { ...DEFAULT_SETTINGS };
+    try {
+      return { ...DEFAULT_SETTINGS, ...JSON.parse(row.v) };
+    } catch {
+      return { ...DEFAULT_SETTINGS };
+    }
+  }
+
+  // upsert the settings row
+  private setSettings(settings: AgentSettings) {
+    this.ctx.storage.sql.exec(
+      `INSERT INTO meta (k, v) VALUES ('settings', ?)
+       ON CONFLICT(k) DO UPDATE SET v = excluded.v`,
+      JSON.stringify(settings),
     );
   }
 
@@ -282,6 +424,21 @@ function normalize(raw: string): string {
   let u = raw.trim();
   if (!/^https?:\/\//i.test(u)) u = "https://" + u;
   return u;
+}
+
+// parse one SSE line from workers ai and return the token text (if any)
+// lines look like: data: {"response":"tok","p":"...","usage":...}
+function extractToken(line: string): string | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("data:")) return null;
+  const payload = trimmed.slice(5).trim();
+  if (!payload || payload === "[DONE]") return null;
+  try {
+    const obj = JSON.parse(payload);
+    return typeof obj.response === "string" ? obj.response : null;
+  } catch {
+    return null;
+  }
 }
 
 // tiny helper to return json responses from the DO

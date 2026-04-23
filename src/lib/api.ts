@@ -70,10 +70,17 @@ export interface ScanRecord {
   compare: CompareInsight | null;
 }
 
+// per-agent settings returned by /api/snapshot and /api/settings
+export interface AgentSettings {
+  autoScanIntervalHours: number | null;
+  nextScanAt: number | null;
+}
+
 // the shape /api/snapshot returns
 export interface AgentSnapshot {
   meta: { url: string; createdAt: number } | null;
   latest: ScanRecord | null;
+  settings: AgentSettings;
   history: Array<{
     id: string;
     at: number;
@@ -132,10 +139,57 @@ export const api = {
   // chat transcript for hydration on page load
   messages: (agentId: string) =>
     request<ChatMessage[]>(`/api/messages?id=${encodeURIComponent(agentId)}`),
-  // send one chat message, get a reply + updated history
-  chat: (agentId: string, message: string) =>
-    request<{ reply: string; history: ChatMessage[] }>("/api/chat", {
+  // stream a chat reply, calling onToken for every token received
+  // resolves with the fully assembled reply once the stream ends
+  chatStream: async (
+    agentId: string,
+    message: string,
+    onToken: (tok: string) => void,
+  ): Promise<string> => {
+    const res = await fetch("/api/chat", {
       method: "POST",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ agentId, message }),
+    });
+    if (!res.ok || !res.body) {
+      const text = await res.text();
+      throw new Error(text || `request failed: ${res.status}`);
+    }
+    // read the SSE stream chunk by chunk
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let assembled = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE frames are separated by blank lines, but workers ai uses \n
+      const lines = buffer.split("\n");
+      // keep the last (possibly incomplete) line for the next iteration
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice(5).trim();
+        if (payload === "[DONE]") continue;
+        try {
+          const obj = JSON.parse(payload);
+          if (typeof obj.response === "string") {
+            assembled += obj.response;
+            onToken(obj.response);
+          }
+        } catch {
+          // ignore malformed frames
+        }
+      }
+    }
+    return assembled;
+  },
+  // update auto-scan settings
+  updateSettings: (agentId: string, autoScanIntervalHours: number | null) =>
+    request<AgentSettings>("/api/settings", {
+      method: "POST",
+      body: JSON.stringify({ agentId, autoScanIntervalHours }),
     }),
 };

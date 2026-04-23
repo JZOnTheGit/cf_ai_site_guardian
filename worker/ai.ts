@@ -168,6 +168,32 @@ export async function runChat(
   return (text || "").trim();
 }
 
+// streaming variant of runChat, returns the raw SSE stream from workers ai
+// the caller is expected to pipe this back to the browser
+export async function runChatStream(
+  ai: Ai,
+  context: string,
+  history: ChatMessage[],
+  userMessage: string,
+): Promise<ReadableStream<Uint8Array>> {
+  const messages: ChatMessage[] = [
+    { role: "system", content: CHAT_SYSTEM_PROMPT },
+    {
+      role: "system",
+      content: `Agent memory for this site (JSON):\n${context}`,
+    },
+    ...history.slice(-10),
+    { role: "user", content: userMessage },
+  ];
+  // ask workers ai for a streaming response
+  const stream = (await ai.run(MODEL, {
+    messages,
+    max_tokens: 600,
+    stream: true,
+  })) as unknown as ReadableStream<Uint8Array>;
+  return stream;
+}
+
 // ---------- helpers ----------
 
 // make sure score is a number in 0..100

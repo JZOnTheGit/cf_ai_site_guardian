@@ -141,14 +141,29 @@ used so the UI never breaks.
   dashboard auto-triggers the first scan.
 - **Agent memory**: every scan is persisted in the Durable Object, with
   timestamps, full raw data, and the AI's interpretation.
-- **Autonomous monitoring (on-demand simulated schedule)**: the "Run new
-  scan" button triggers a new scan; the agent automatically compares it to
-  the previous one and surfaces regressions / improvements. The same code
-  path could be wired to a Cron Trigger or `ctx.storage.setAlarm()` for
-  continuous scheduled checks.
-- **Chat interface**: grounded, context-aware chat over the site's memory.
-  Quick-start prompts are provided; the agent refuses to answer questions
-  it doesn't have data for.
+- **Autonomous monitoring via Durable Object alarms**: the dashboard has an
+  "auto-scan" selector (Off / 1h / 6h / 24h). When turned on, the Durable
+  Object calls `ctx.storage.setAlarm()` and its `alarm()` handler runs a
+  scan on schedule, then reschedules itself. This runs on Cloudflare's
+  infrastructure, independent of any open browser tab.
+- **Score trend sparklines + delta arrows**: each score card shows a small
+  inline sparkline of recent scans plus an up/down delta vs the previous
+  scan, so you can see improvement or regression at a glance.
+- **Streaming chat**: chat replies stream token-by-token via SSE for an
+  instant-feedback feel. Messages persist in the Durable Object's SQLite
+  so the transcript survives reloads and deploys.
+- **Multi-site support**: you can monitor as many sites as you like. Each
+  URL you submit maps deterministically to its own Durable Object
+  (`idFromName(normalizedUrl)`), so each site has its own isolated scan
+  history, chat transcript, and auto-scan schedule.
+- **Recent-sites list**: the browser remembers agents you've opened via
+  `localStorage` (not a server-side registry), so the landing page can
+  show a "Your monitored sites" list. The data itself still lives in the
+  Durable Object; the list is just a bookmark index.
+- **Shareable permanent links**: the dashboard URL
+  `/site/:agentId` is a permanent handle to that agent's memory. Bookmark
+  it, share it, or paste the original site URL on `/` at any time to
+  reconnect with the same agent and its full history.
 
 ---
 
@@ -245,14 +260,15 @@ The current deployment lives at **[cf-ai-site-guardian.jass150505.workers.dev](h
 
 ## API reference
 
-| Method | Path                 | Body                      | Returns                         |
-| ------ | -------------------- | ------------------------- | ------------------------------- |
-| POST   | `/api/create-agent`  | `{ url }`                 | `{ agentId, url, createdAt }`   |
-| POST   | `/api/scan`          | `{ agentId }`             | `ScanRecord`                    |
-| GET    | `/api/snapshot?id=`  | -                         | `AgentSnapshot`                 |
-| GET    | `/api/history?id=`   | -                         | `ScanRecord[]`                  |
-| GET    | `/api/messages?id=`  | -                         | `ChatMessage[]`                 |
-| POST   | `/api/chat`          | `{ agentId, message }`    | `{ reply, history }`            |
+| Method | Path                 | Body                                        | Returns                         |
+| ------ | -------------------- | ------------------------------------------- | ------------------------------- |
+| POST   | `/api/create-agent`  | `{ url }`                                   | `{ agentId, url, createdAt }`   |
+| POST   | `/api/scan`          | `{ agentId }`                               | `ScanRecord`                    |
+| GET    | `/api/snapshot?id=`  | -                                           | `AgentSnapshot` (incl. settings) |
+| GET    | `/api/history?id=`   | -                                           | `ScanRecord[]`                  |
+| GET    | `/api/messages?id=`  | -                                           | `ChatMessage[]`                 |
+| POST   | `/api/chat`          | `{ agentId, message }`                      | `text/event-stream` (SSE)       |
+| POST   | `/api/settings`      | `{ agentId, autoScanIntervalHours }`        | `AgentSettings`                 |
 
 Type definitions live in `src/lib/api.ts` and mirror `worker/agent.ts` /
 `worker/ai.ts`.

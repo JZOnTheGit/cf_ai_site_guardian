@@ -20,39 +20,57 @@ export function ChatPanel({ agentId }: Props) {
     api.messages(agentId).then(setMessages).catch(() => {});
   }, [agentId]);
 
-  // auto-scroll to the newest message whenever the list changes
+  // auto-scroll to the newest message, but only if the user is already near
+  // the bottom - this way we don't yank them back if they scroll up to re-read
   useEffect(() => {
-    scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
-      behavior: "smooth",
-    });
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // threshold of ~80px so tiny scroll jitter still counts as "at the bottom"
+    if (distanceFromBottom < 80) {
+      // use auto (not smooth) so rapidly streaming tokens don't fight each other
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages, sending]);
 
-  // send a message, optimistically add it, then replace with the server truth
+  // send a message and stream the assistant reply token-by-token
   async function send(e?: React.FormEvent) {
     e?.preventDefault();
     const text = input.trim();
     if (!text || sending) return;
     setSending(true);
     setError(null);
-    // show the user's message immediately before the api responds
-    const optimistic: ChatMessage = { role: "user", content: text };
-    setMessages((m) => [...m, optimistic]);
+    // show the user's message immediately and open an empty assistant bubble
+    const userMsg: ChatMessage = { role: "user", content: text };
+    const assistantMsg: ChatMessage = { role: "assistant", content: "" };
+    setMessages((m) => [...m, userMsg, assistantMsg]);
     setInput("");
     try {
-      const { history } = await api.chat(agentId, text);
-      setMessages(history);
+      // stream tokens into the last (assistant) bubble as they arrive
+      await api.chatStream(agentId, text, (tok) => {
+        setMessages((m) => {
+          const next = m.slice();
+          const last = next[next.length - 1];
+          if (last && last.role === "assistant") {
+            next[next.length - 1] = { ...last, content: last.content + tok };
+          }
+          return next;
+        });
+      });
     } catch (err: any) {
       setError(err?.message ?? "Failed to send");
-      // roll back the optimistic message on failure
-      setMessages((m) => m.filter((x) => x !== optimistic));
+      // roll back both bubbles on failure
+      setMessages((m) => m.slice(0, -2));
     } finally {
       setSending(false);
     }
   }
 
   return (
-    <div className="card flex h-full min-h-[560px] flex-col">
+    // fixed height on mobile, viewport-bounded on desktop so the message list
+    // scrolls inside the card instead of pushing the whole panel down the page
+    <div className="card flex h-[600px] min-h-[560px] flex-col lg:h-[calc(100vh-3rem)] lg:max-h-[820px]">
+
       {/* header with a tiny agent avatar */}
       <header className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
         <div className="flex items-center gap-2">
@@ -94,12 +112,20 @@ export function ChatPanel({ agentId }: Props) {
           </div>
         )}
 
-        {/* actual message bubbles */}
-        {messages.map((m, i) => (
-          <Bubble key={i} role={m.role} content={m.content} />
-        ))}
-        {/* show a pulsing placeholder while the assistant is typing */}
-        {sending && <Bubble role="assistant" content="..." pulsing />}
+        {/* actual message bubbles - the last assistant bubble streams tokens live */}
+        {messages.map((m, i) => {
+          const isLast = i === messages.length - 1;
+          // show a pulsing cursor while the final assistant bubble is still streaming
+          const stillStreaming = sending && isLast && m.role === "assistant";
+          return (
+            <Bubble
+              key={i}
+              role={m.role}
+              content={m.content || (stillStreaming ? "..." : "")}
+              pulsing={stillStreaming && m.content.length === 0}
+            />
+          );
+        })}
       </div>
 
       {/* error line if a send failed */}
