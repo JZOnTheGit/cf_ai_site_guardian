@@ -246,3 +246,63 @@ Worker falls back to deterministic generators in `worker/ai.ts`:
 
 This is why the dashboard always has content, even if Workers AI is
 unavailable or hallucinates malformed JSON.
+
+---
+
+## AI assistance prompts
+
+I built this in Cursor and used the AI as a pair-programmer through the
+build. The prompts in the sections above are the real ones the app sends
+to Workers AI at runtime. The notes below are a sample of what I asked
+the IDE assistant while building - I drove the design, the scope, and
+the debugging, and used the assistant to help draft and review code.
+
+A few that match how I actually worked on this:
+
+- "one bug is if the chat gets longer it just goes down and down off
+  site, need it to stick to a box and be scrollable please"
+- "you made that fix which fixed the bug but how come some messages say
+  no reply now?"
+- "the bookmark this link link has local host in it, shouldnt it be the
+  production link, can u check that everything is production ready"
+- "the 3 dots menu on the top of the dashboard, when i hover over the
+  popup the menu disappears so i cant click on it, fix that please"
+- "loading this site shows a white screen for an old agent url, what
+  changed and how do we keep older scans working"
+- "should we upgrade to wrangler v4 since this is for the job
+  application, want to be on the latest stuff"
+
+
+Things I made the call on myself:
+
+- Architecture: one Durable Object per site URL, deterministic id from
+  the normalized URL, SQLite for scans + chat + meta in the DO.
+- Chat persistence: tee the upstream stream, return one branch to the
+  client and drain the other inside `ctx.waitUntil` to rebuild and save
+  the assistant reply.
+- Two-pass scan insight (main pass + critic pass), with deterministic
+  fallbacks so the UI never breaks when the LLM does.
+- Tool-calling loop: a short non-streaming "decide" call, then a
+  streaming reply with the tool result folded into context.
+- Security posture: SSRF allow/deny list, same-origin POST check,
+  in-memory rate limit, response size + timeout caps, agent id hex
+  validation.
+- UX choices: dark mode tokens, severity chips, copy-as-code snippets
+  for missing headers, scan diff view, recent sites in localStorage,
+  "bookmark this link" banner.
+
+Things the assistant helped with the most:
+
+- Tailwind class composition for the cards, dark mode variants, and the
+  small skeleton loaders.
+- Boilerplate around the SSE parser on both the DO save side and the
+  browser side, after I described the buffering bug I was hitting.
+- Drafts of the prompt text in `worker/prompts.ts`, which I then edited
+  to match the JSON shapes the rest of the code expects.
+- Pointing me at the right Cloudflare primitives (`ctx.waitUntil`, DO
+  alarms, `response.cf`, the assets binding with SPA fallback) when I
+  described what I wanted to do.
+
+I review every change before accepting it and the codebase has typecheck,
+lint, unit tests, build, and a Wrangler dry-run gating every push, so
+nothing lands without passing those checks.
